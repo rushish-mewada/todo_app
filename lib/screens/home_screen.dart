@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 import '../models/todo.dart';
 import '../widgets/add_todo.dart';
 import '../widgets/task_card.dart';
 import '../widgets/bot_nav.dart';
 import '../widgets/refresh.dart';
+import '../widgets/preview_modal.dart';
+import '../widgets/delete_confirmation_modal.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -24,6 +27,8 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   bool showFloatingMenu = false;
 
   late Box<Todo> todoBox;
+  final TextEditingController _searchController = TextEditingController();
+  String _searchText = "";
 
   @override
   void initState() {
@@ -36,6 +41,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     _opacityAnimation = Tween<double>(begin: 0, end: 1).animate(_controller);
 
     _syncFirestoreToHive();
+
+    _searchController.addListener(() {
+      if (mounted) {
+        setState(() {
+          _searchText = _searchController.text.trim();
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _searchController.dispose();
+    super.dispose();
   }
 
   Future<void> _syncFirestoreToHive() async {
@@ -110,10 +130,12 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
   }
 
   void toggleMenu() {
-    setState(() {
-      showFloatingMenu = !showFloatingMenu;
-      showFloatingMenu ? _controller.forward() : _controller.reverse();
-    });
+    if (mounted) {
+      setState(() {
+        showFloatingMenu = !showFloatingMenu;
+        showFloatingMenu ? _controller.forward() : _controller.reverse();
+      });
+    }
   }
 
   Future<void> _openAddTodo({Todo? existing, int? index}) async {
@@ -136,11 +158,21 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
-  void _deleteTodo(int index) {
+  void _deleteTodo(int index) async {
     final todo = todoBox.getAt(index);
-    if (todo != null) {
+    if (todo == null) return;
+
+    final bool? confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (context) => DeleteConfirmationModal(taskTitle: todo.title),
+    );
+
+    if (confirmDelete == true) {
       _deleteFromFirestore(todo.firebaseId);
       todoBox.deleteAt(index);
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -150,13 +182,99 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       updatedTodo.status = newStatus;
       updatedTodo.save();
       _syncHiveTodoToFirestore(updatedTodo);
-      setState(() {});
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
   Future<void> _refreshHiveOnly() async {
-    setState(() {});
+    if (mounted) {
+      setState(() {});
+    }
     await Future.delayed(const Duration(milliseconds: 500));
+  }
+
+  Color _getPriorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return const Color(0xFFEA4335);
+      case 'Medium':
+        return const Color(0xFFED9611);
+      case 'Low':
+        return const Color(0xFF24A19C);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _getPriorityLabel(String priority) {
+    switch (priority) {
+      case 'High':
+        return 'High Priority';
+      case 'Medium':
+        return 'Medium Priority';
+      case 'Low':
+        return 'Low Priority';
+      default:
+        return 'Priority';
+    }
+  }
+
+  String _getPriorityIcon(String priority) {
+    switch (priority) {
+      case 'High':
+        return '⚠️';
+      case 'Medium':
+        return '⏳';
+      case 'Low':
+        return '✅';
+      default:
+        return '';
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status) {
+      case 'To-Do':
+        return const Color(0xFF218EFD);
+      case 'Completed':
+        return const Color(0xFF23A26D);
+      case 'In Progress':
+        return const Color(0xFFF6A221);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  void _showTaskPreviewModal(Todo todo) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return PreviewModal(
+          todo: todo,
+          onUpdateAndSave: (updatedTodo) async {
+            final allTodos = todoBox.values.toList();
+            final originalIndex = allTodos.indexWhere((t) => t.firebaseId == updatedTodo.firebaseId);
+
+            if (originalIndex != -1) {
+              await todoBox.putAt(originalIndex, updatedTodo);
+              await _syncHiveTodoToFirestore(updatedTodo);
+              if (mounted) {
+                setState(() {});
+              }
+            }
+          },
+          onDelete: () {
+            final allTodos = todoBox.values.toList();
+            _deleteTodo(allTodos.indexOf(todo));
+          },
+          getPriorityColor: _getPriorityColor,
+          getPriorityLabel: _getPriorityLabel,
+          getStatusColor: _getStatusColor,
+        );
+      },
+    );
   }
 
   @override
@@ -169,41 +287,80 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
             child: ValueListenableBuilder(
               valueListenable: todoBox.listenable(),
               builder: (context, Box<Todo> box, _) {
-                final todos = box.values.toList();
+                final allTodos = box.values.toList();
+                final filteredTodos = allTodos.where((todo) {
+                  return todo.title.toLowerCase().contains(_searchText.toLowerCase()) ||
+                      todo.description.toLowerCase().contains(_searchText.toLowerCase());
+                }).toList();
 
-                return RefreshWrapper( // ✅ Using your global pull-to-refresh
+                return RefreshWrapper(
                   onRefresh: _refreshHiveOnly,
                   child: Column(
                     children: [
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                         child: Row(
                           children: [
-                            Text('Today', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                            Spacer(),
+                            const Text('Today', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                            const Spacer(),
                           ],
                         ),
                       ),
-                      const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: Align(
                           alignment: Alignment.centerLeft,
-                          child: Text('Mon 20 March 2024', style: TextStyle(color: Colors.grey)),
+                          child: Text(
+                            DateFormat('EEE dd MMMM yyyy').format(DateTime.now()),
+                            style: const TextStyle(color: Colors.grey),
+                          ),
                         ),
                       ),
                       const SizedBox(height: 20),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Search Task',
-                            prefixIcon: const Icon(Icons.search),
-                            filled: true,
-                            fillColor: Colors.white,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(32),
-                              borderSide: const BorderSide(color: Colors.grey),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(32),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.1),
+                                spreadRadius: 0,
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: InputDecoration(
+                              hintText: 'Search Task',
+                              hintStyle: TextStyle(color: Colors.grey[400]),
+                              prefixIcon: Icon(Icons.search, color: Colors.grey[600]),
+                              suffixIcon: _searchText.isNotEmpty
+                                  ? IconButton(
+                                icon: const Icon(Icons.close, color: Colors.grey),
+                                onPressed: () {
+                                  _searchController.clear();
+                                },
+                              )
+                                  : null,
+                              filled: true,
+                              fillColor: Colors.white,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                              border: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(32),
+                                borderSide: BorderSide.none,
+                              ),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(32),
+                                borderSide: BorderSide.none,
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(32),
+                                borderSide: BorderSide.none,
+                              ),
                             ),
                           ),
                         ),
@@ -227,23 +384,32 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
                       ),
                       const SizedBox(height: 20),
                       Expanded(
-                        child: todos.isEmpty
+                        child: filteredTodos.isEmpty
                             ? Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Image.asset('assets/empty_state.png', height: 220),
+                            if (_searchText.isEmpty)
+                              Image.asset('assets/empty_state.png', height: 220),
                             const SizedBox(height: 16),
+                            Text(
+                              _searchText.isEmpty ? 'No tasks for today.' : 'No matching tasks found.',
+                              style: const TextStyle(fontSize: 16, color: Colors.black54),
+                              textAlign: TextAlign.center,
+                            ),
                           ],
                         )
                             : ListView.builder(
                           padding: const EdgeInsets.only(bottom: 100),
-                          itemCount: todos.length,
+                          itemCount: filteredTodos.length,
                           itemBuilder: (context, index) {
-                            return TaskCard(
-                              todo: todos[index],
-                              onEdit: () => _openAddTodo(existing: todos[index], index: index),
-                              onDelete: () => _deleteTodo(index),
-                              onStatusChange: (status) => _changeStatus(index, status),
+                            return GestureDetector(
+                              onTap: () => _showTaskPreviewModal(filteredTodos[index]),
+                              child: TaskCard(
+                                todo: filteredTodos[index],
+                                onEdit: () => _openAddTodo(existing: filteredTodos[index], index: allTodos.indexOf(filteredTodos[index])),
+                                onDelete: () => _deleteTodo(allTodos.indexOf(filteredTodos[index])),
+                                onStatusChange: (status) => _changeStatus(allTodos.indexOf(filteredTodos[index]), status),
+                              ),
                             );
                           },
                         ),
@@ -295,6 +461,58 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
       ),
       bottomNavigationBar: BotNav(currentIndex: 0, onTap: (index) {}),
     );
+  }
+
+  Color getPriorityColor(String priority) {
+    switch (priority) {
+      case 'High':
+        return const Color(0xFFEA4335);
+      case 'Medium':
+        return const Color(0xFFED9611);
+      case 'Low':
+        return const Color(0xFF24A19C);
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String getPriorityLabel(String priority) {
+    switch (priority) {
+      case 'High':
+        return 'High Priority';
+      case 'Medium':
+        return 'Medium Priority';
+      case 'Low':
+        return 'Low Priority';
+      default:
+        return 'Priority';
+    }
+  }
+
+  String getPriorityIcon(String priority) {
+    switch (priority) {
+      case 'High':
+        return '⚠️';
+      case 'Medium':
+        return '⏳';
+      case 'Low':
+        return '✅';
+      default:
+        return '';
+    }
+  }
+
+  Color getStatusColor(String status) {
+    switch (status) {
+      case 'To-Do':
+        return const Color(0xFF218EFD);
+      case 'Completed':
+        return const Color(0xFF23A26D);
+      case 'In Progress':
+        return const Color(0xFFF6A221);
+      default:
+        return Colors.grey;
+    }
   }
 
   Widget filterButton(String label, {bool selected = false}) {

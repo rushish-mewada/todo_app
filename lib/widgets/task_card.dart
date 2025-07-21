@@ -15,6 +15,34 @@ class TaskCard extends StatelessWidget {
     this.onStatusChange,
   });
 
+  // Helper to build custom PopupMenuItem with icon and text
+  PopupMenuEntry<String> _buildPopupMenuItem(
+      IconData icon, String text, String value, Color textColor,
+      {Color? iconColor}) {
+    return PopupMenuItem<String>(
+      value: value,
+      padding: EdgeInsets.zero, // Remove default padding to allow custom padding inside
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            Icon(icon, color: iconColor ?? textColor, size: 20), // Icon before text
+            const SizedBox(width: 12), // Spacing between icon and text
+            Text(
+              text,
+              style: TextStyle(fontSize: 16, color: textColor),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Helper to build a custom Divider for the popup menu
+  PopupMenuEntry<String> _buildPopupDivider() {
+    return const PopupMenuDivider(height: 1); // Use standard divider with minimal height
+  }
+
   @override
   Widget build(BuildContext context) {
     final color = getPriorityColor(todo.priority);
@@ -64,13 +92,20 @@ class TaskCard extends StatelessWidget {
                         break;
                     }
                   },
+                  // Styling for the PopupMenu itself
+                  color: Colors.white, // White background
+                  elevation: 8, // For the shadow
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12), // Rounded corners
+                    side: BorderSide(color: Colors.grey.shade300, width: 1), // 1px grey border
+                  ),
                   itemBuilder: (context) => [
-                    const PopupMenuItem(value: 'edit', child: Text('Edit')),
-                    const PopupMenuItem(value: 'delete', child: Text('Delete')),
-                    const PopupMenuDivider(),
-                    const PopupMenuItem(value: 'To-Do', child: Text('Mark as To-Do')),
-                    const PopupMenuItem(value: 'In Progress', child: Text('Mark as In Progress')),
-                    const PopupMenuItem(value: 'Completed', child: Text('Mark as Completed')),
+                    _buildPopupMenuItem(Icons.edit, 'Edit', 'edit', Colors.black87, iconColor: const Color(0xFFEB5E00)), // Orange icon
+                    _buildPopupMenuItem(Icons.delete, 'Delete', 'delete', Colors.redAccent), // Red icon
+                    _buildPopupDivider(), // Custom divider
+                    _buildPopupMenuItem(Icons.pending_actions, 'Mark as To-Do', 'To-Do', Colors.black87),
+                    _buildPopupMenuItem(Icons.run_circle_outlined, 'Mark as In Progress', 'In Progress', Colors.black87),
+                    _buildPopupMenuItem(Icons.check_circle_outline, 'Mark as Completed', 'Completed', Colors.black87),
                   ],
                 ),
               ],
