@@ -29,6 +29,8 @@ class _NotificationScreenState extends State<NotificationScreen> {
   Future<void> generateNotifications() async {
     final todos = todoBox.values.toList();
     final now = DateTime.now();
+    final timestamp = DateFormat('MMM d, h:mm a').format(now);
+
     List<Map<String, String>> result = [];
 
     for (var todo in todos) {
@@ -51,7 +53,26 @@ class _NotificationScreenState extends State<NotificationScreen> {
       String? type;
       String? message;
 
-      if (!["Done", "Completed"].contains(todo.priority)) {
+      // 1. Completed Task
+      if (todo.status == 'Completed' || todo.isCompleted == true) {
+        type = '✅ Task Completed';
+        message = 'Good job! You completed "${todo.title}".';
+      }
+
+      // 2. In Progress Tracking
+      else if (todo.status == 'In Progress') {
+        type = '🚧 Task In Progress';
+        message = 'You started working on "${todo.title}". Keep it going!';
+      }
+
+      // 3. Task Updated
+      else if (todo.needsUpdate == true) {
+        type = '✏️ Task Updated';
+        message = 'You made changes to "${todo.title}".';
+      }
+
+      // 4. Upcoming/Due/Reminder
+      else {
         if (timeDiff.inMinutes <= 30 && timeDiff.inMinutes > 0) {
           type = '🔔 Reminder';
           message = 'Your task "${todo.title}" starts in ${timeDiff.inMinutes} minutes. Get ready!';
@@ -62,21 +83,29 @@ class _NotificationScreenState extends State<NotificationScreen> {
           type = '⏳ Upcoming Task';
           message = 'Upcoming: "${todo.title}" is scheduled soon. Stay prepared!';
         }
-      } else {
-        type = '✅ Task Completed';
-        message = 'Good job! You completed "${todo.title}".';
       }
 
       final key = '${todo.title}_$type';
       if (type != null && message != null && !dismissedBox.containsKey(key)) {
-        result.add({'type': type, 'message': message, 'key': key});
+        result.add({
+          'type': type,
+          'message': message,
+          'key': key,
+          'timestamp': timestamp,
+        });
       }
     }
 
     if (result.isEmpty) {
-      result.add({'type': '', 'message': 'No notifications for today.', 'key': ''});
+      result.add({
+        'type': '',
+        'message': 'No notifications for today.',
+        'key': 'none',
+        'timestamp': timestamp,
+      });
     }
 
+    if (!mounted) return;
     setState(() {
       notifications = result;
     });
@@ -85,10 +114,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
   void removeNotification(int index) {
     final notif = notifications[index];
     final key = notif['key'];
-    if (key != null && key.isNotEmpty) {
+    if (key != null && key != 'none') {
       dismissedBox.put(key, true);
     }
-
     setState(() {
       notifications.removeAt(index);
     });
@@ -97,7 +125,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
   void clearAllNotifications() {
     for (var notif in notifications) {
       final key = notif['key'];
-      if (key != null && key.isNotEmpty) {
+      if (key != null && key != 'none') {
         dismissedBox.put(key, true);
       }
     }
@@ -131,15 +159,24 @@ class _NotificationScreenState extends State<NotificationScreen> {
       ),
       body: RefreshWrapper(
         onRefresh: generateNotifications,
-        child: ListView.builder(
+        child: notifications.length == 1 && notifications[0]['key'] == 'none'
+            ? const Center(
+          child: Text(
+            'No notifications for today.',
+            style: TextStyle(fontSize: 16, color: Colors.black54),
+            textAlign: TextAlign.center,
+          ),
+        )
+            : ListView.builder(
           padding: const EdgeInsets.all(16),
           itemCount: notifications.length,
           itemBuilder: (context, index) {
             final type = notifications[index]['type']!;
             final message = notifications[index]['message']!;
+            final timestamp = notifications[index]['timestamp'] ?? '';
 
             return Dismissible(
-              key: Key('$type-$message'),
+              key: Key('${notifications[index]['key']}'),
               direction: DismissDirection.endToStart,
               onDismissed: (_) => removeNotification(index),
               background: Container(
@@ -152,37 +189,51 @@ class _NotificationScreenState extends State<NotificationScreen> {
                 ),
                 child: const Icon(Icons.delete, color: Colors.white),
               ),
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Colors.black12,
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
-                    ),
-                  ],
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (type.isNotEmpty)
-                      Text(
-                        type,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 17,
-                        ),
+              child: SizedBox(
+                width: double.infinity,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 16),
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black12,
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
                       ),
-                    const SizedBox(height: 6),
-                    Text(
-                      message,
-                      style: const TextStyle(fontSize: 15),
-                    ),
-                  ],
+                    ],
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (type.isNotEmpty)
+                        Text(
+                          type,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 17,
+                          ),
+                        ),
+                      const SizedBox(height: 6),
+                      Text(
+                        message,
+                        style: const TextStyle(fontSize: 15),
+                      ),
+                      if (timestamp.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Text(
+                            timestamp,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey,
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
             );
