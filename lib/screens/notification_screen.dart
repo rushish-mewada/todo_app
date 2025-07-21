@@ -17,12 +17,16 @@ class _NotificationScreenState extends State<NotificationScreen> {
   List<Map<String, String>> notifications = [];
   late Box<Todo> todoBox;
   late Box dismissedBox;
+  late Box previousDataBox;
+  late Box activeChangeNotifKeysBox;
 
   @override
   void initState() {
     super.initState();
     todoBox = Hive.box<Todo>('todos');
     dismissedBox = Hive.box('dismissed_notifications');
+    previousDataBox = Hive.box('previous_todo_data');
+    activeChangeNotifKeysBox = Hive.box('active_change_notification_keys');
     generateNotifications();
   }
 
@@ -32,6 +36,18 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final timestamp = DateFormat('MMM d, h:mm a').format(now);
 
     List<Map<String, String>> result = [];
+
+    for (var key in activeChangeNotifKeysBox.keys) {
+      final storedNotif = activeChangeNotifKeysBox.get(key);
+      if (storedNotif != null && storedNotif is Map<dynamic, dynamic>) {
+        result.add({
+          'type': storedNotif['type'] as String,
+          'message': storedNotif['message'] as String,
+          'key': storedNotif['key'] as String,
+          'timestamp': storedNotif['timestamp'] as String,
+        });
+      }
+    }
 
     for (var todo in todos) {
       if (todo.date.isEmpty || todo.time.isEmpty) continue;
@@ -49,52 +65,83 @@ class _NotificationScreenState extends State<NotificationScreen> {
       }
 
       final timeDiff = fullDateTime.difference(now);
+      final prevMap = previousDataBox.get(todo.key);
+      final prevPriority = prevMap?['priority'];
+      final prevDate = prevMap?['date'];
+      final prevTime = prevMap?['time'];
 
-      String? type;
-      String? message;
-
-      // 1. Completed Task
-      if (todo.status == 'Completed' || todo.isCompleted == true) {
-        type = '✅ Task Completed';
-        message = 'Good job! You completed "${todo.title}".';
-      }
-
-      // 2. In Progress Tracking
-      else if (todo.status == 'In Progress') {
-        type = '🚧 Task In Progress';
-        message = 'You started working on "${todo.title}". Keep it going!';
-      }
-
-      // 3. Task Updated
-      else if (todo.needsUpdate == true) {
-        type = '✏️ Task Updated';
-        message = 'You made changes to "${todo.title}".';
-      }
-
-      // 4. Upcoming/Due/Reminder
-      else {
-        if (timeDiff.inMinutes <= 30 && timeDiff.inMinutes > 0) {
-          type = '🔔 Reminder';
-          message = 'Your task "${todo.title}" starts in ${timeDiff.inMinutes} minutes. Get ready!';
-        } else if (timeDiff.isNegative) {
-          type = '⏳ Task Due';
-          message = 'Don\'t forget to complete "${todo.title}" before the deadline.';
+      void addNotif(String type, String msg, {bool isChangeNotif = false}) {
+        String key;
+        if (type == '🗓️ Date Changed') {
+          key = '${todo.key}_date_changed_${todo.date}';
+        } else if (type == '🕐 Time Changed') {
+          key = '${todo.key}_time_changed_${todo.time}';
+        } else if (type == '⬆️ Priority Changed') {
+          key = '${todo.key}_priority_changed_${todo.priority}';
+        } else if (type == '✏️ Task Updated') {
+          key = '${todo.key}_task_updated';
         } else {
-          type = '⏳ Upcoming Task';
-          message = 'Upcoming: "${todo.title}" is scheduled soon. Stay prepared!';
+          key = '${todo.key}_$type';
+        }
+
+        if (!dismissedBox.containsKey(key)) {
+          final newNotif = {
+            'type': type,
+            'message': msg,
+            'key': key,
+            'timestamp': timestamp,
+          };
+          result.add(newNotif);
+          if (isChangeNotif) {
+            activeChangeNotifKeysBox.put(key, newNotif);
+          }
         }
       }
 
-      final key = '${todo.title}_$type';
-      if (type != null && message != null && !dismissedBox.containsKey(key)) {
-        result.add({
-          'type': type,
-          'message': message,
-          'key': key,
-          'timestamp': timestamp,
-        });
+      if (timeDiff.inDays < 0) {
+        addNotif('🚨 Overdue Reminder', 'Task "${todo.title}" is overdue by ${timeDiff.inDays.abs()} day${timeDiff.inDays.abs() > 1 ? 's' : ''}!');
       }
+
+      if (todo.isCompleted == true || todo.status == 'Completed') {
+        addNotif('✅ Task Completed', 'Good job! You completed "${todo.title}".');
+      } else if (todo.status == 'In Progress') {
+        addNotif('🚧 Task In Progress', 'You started working on "${todo.title}". Keep it going!');
+      } else if (todo.needsUpdate == true) {
+        addNotif('✏️ Task Updated', 'You made changes to "${todo.title}".');
+      } else {
+        if (fullDateTime.isAfter(now) && timeDiff.inMinutes <= 30 && timeDiff.inMinutes > 0) {
+          addNotif('🔔 Reminder', 'Your task "${todo.title}" starts in ${timeDiff.inMinutes} minute${timeDiff.inMinutes > 1 ? 's' : ''}. Get ready!');
+        } else if (fullDateTime.isBefore(now) && (todo.isCompleted == false) && todo.status != 'Completed') {
+          addNotif('⏳ Task Due', 'Don\'t forget to complete "${todo.title}" before the deadline.');
+        } else if (fullDateTime.isAfter(now)) {
+          addNotif('⏳ Upcoming Task', 'Upcoming: "${todo.title}" is scheduled soon. Stay prepared!');
+        }
+      }
+
+      if (prevDate != null && prevDate != todo.date) {
+        addNotif('🗓️ Date Changed', 'Task "${todo.title}" was rescheduled to ${todo.date}.', isChangeNotif: true);
+      }
+
+      if (prevTime != null && prevTime != todo.time) {
+        addNotif('🕐 Time Changed', 'Task "${todo.title}" time updated to ${todo.time}.', isChangeNotif: true);
+      }
+
+      if (prevPriority != null && prevPriority != todo.priority) {
+        addNotif('⬆️ Priority Changed', 'Task "${todo.title}" priority changed from $prevPriority to ${todo.priority}.', isChangeNotif: true);
+      }
+
+      previousDataBox.put(todo.key, {
+        'priority': todo.priority,
+        'date': todo.date,
+        'time': todo.time,
+      });
     }
+
+    final uniqueResults = <String, Map<String, String>>{};
+    for (var notif in result) {
+      uniqueResults[notif['key']!] = notif;
+    }
+    result = uniqueResults.values.toList();
 
     if (result.isEmpty) {
       result.add({
@@ -116,6 +163,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
     final key = notif['key'];
     if (key != null && key != 'none') {
       dismissedBox.put(key, true);
+      activeChangeNotifKeysBox.delete(key);
     }
     setState(() {
       notifications.removeAt(index);
@@ -127,6 +175,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
       final key = notif['key'];
       if (key != null && key != 'none') {
         dismissedBox.put(key, true);
+        activeChangeNotifKeysBox.delete(key);
       }
     }
     setState(() {

@@ -30,6 +30,15 @@ void main() async {
 
   await Hive.openBox<Todo>('todos');
   await Hive.openBox('dismissed_notifications');
+  await Hive.openBox('previous_todo_data');
+  await Hive.openBox('active_change_notification_keys');
+  // Open shown_notifications as a lazy box of type bool to avoid clearing
+  final shownBox = await Hive.openBox('shown_notifications');
+
+  // Ensure shown_notifications are preserved between refreshes
+  if (!shownBox.containsKey('__initialized')) {
+    await shownBox.put('__initialized', true);
+  }
 
   runApp(const MyApp());
 }
