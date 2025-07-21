@@ -7,6 +7,7 @@ import '../models/todo.dart';
 import '../widgets/add_todo.dart';
 import '../widgets/task_card.dart';
 import '../widgets/bot_nav.dart';
+import '../widgets/refresh.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -153,6 +154,11 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
     }
   }
 
+  Future<void> _refreshHiveOnly() async {
+    setState(() {});
+    await Future.delayed(const Duration(milliseconds: 500));
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -165,82 +171,85 @@ class _HomeScreenState extends State<HomeScreen> with SingleTickerProviderStateM
               builder: (context, Box<Todo> box, _) {
                 final todos = box.values.toList();
 
-                return Column(
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                      child: Row(
-                        children: [
-                          Text('Today', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
-                          Spacer(),
-                        ],
+                return RefreshWrapper( // ✅ Using your global pull-to-refresh
+                  onRefresh: _refreshHiveOnly,
+                  child: Column(
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        child: Row(
+                          children: [
+                            Text('Today', style: TextStyle(fontSize: 28, fontWeight: FontWeight.bold)),
+                            Spacer(),
+                          ],
+                        ),
                       ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 20),
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text('Mon 20 March 2024', style: TextStyle(color: Colors.grey)),
+                      const Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 20),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text('Mon 20 March 2024', style: TextStyle(color: Colors.grey)),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: TextField(
-                        decoration: InputDecoration(
-                          hintText: 'Search Task',
-                          prefixIcon: const Icon(Icons.search),
-                          filled: true,
-                          fillColor: Colors.white,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(32),
-                            borderSide: const BorderSide(color: Colors.grey),
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Search Task',
+                            prefixIcon: const Icon(Icons.search),
+                            filled: true,
+                            fillColor: Colors.white,
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(32),
+                              borderSide: const BorderSide(color: Colors.grey),
+                            ),
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: Row(
-                        children: [
-                          filterButton('To-Do', selected: true),
-                          const SizedBox(width: 8),
-                          filterButton('Habit'),
-                          const SizedBox(width: 8),
-                          filterButton('Journal'),
-                          const SizedBox(width: 8),
-                          filterButton('Note'),
-                          const Spacer(),
-                          const Icon(Icons.filter_alt_outlined, color: Color(0xFFEB5E00)),
-                        ],
+                      const SizedBox(height: 20),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        child: Row(
+                          children: [
+                            filterButton('To-Do', selected: true),
+                            const SizedBox(width: 8),
+                            filterButton('Habit'),
+                            const SizedBox(width: 8),
+                            filterButton('Journal'),
+                            const SizedBox(width: 8),
+                            filterButton('Note'),
+                            const Spacer(),
+                            const Icon(Icons.filter_alt_outlined, color: Color(0xFFEB5E00)),
+                          ],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 20),
-                    Expanded(
-                      child: todos.isEmpty
-                          ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Image.asset('assets/empty_state.png', height: 220),
-                          const SizedBox(height: 16),
-                        ],
-                      )
-                          : ListView.builder(
-                        padding: const EdgeInsets.only(bottom: 100),
-                        itemCount: todos.length,
-                        itemBuilder: (context, index) {
-                          return TaskCard(
-                            todo: todos[index],
-                            onEdit: () => _openAddTodo(existing: todos[index], index: index),
-                            onDelete: () => _deleteTodo(index),
-                            onStatusChange: (status) => _changeStatus(index, status),
-                          );
-                        },
+                      const SizedBox(height: 20),
+                      Expanded(
+                        child: todos.isEmpty
+                            ? Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset('assets/empty_state.png', height: 220),
+                            const SizedBox(height: 16),
+                          ],
+                        )
+                            : ListView.builder(
+                          padding: const EdgeInsets.only(bottom: 100),
+                          itemCount: todos.length,
+                          itemBuilder: (context, index) {
+                            return TaskCard(
+                              todo: todos[index],
+                              onEdit: () => _openAddTodo(existing: todos[index], index: index),
+                              onDelete: () => _deleteTodo(index),
+                              onStatusChange: (status) => _changeStatus(index, status),
+                            );
+                          },
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 );
               },
             ),

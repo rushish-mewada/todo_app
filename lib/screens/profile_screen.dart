@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+
 import '../widgets/bot_nav.dart';
 import '../providers/auth_provider.dart';
+import '../widgets/refresh.dart'; // ✅ Imported the global refresh wrapper
 
-class ProfileScreen extends StatelessWidget {
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
+
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  Future<void> _handleRefresh() async {
+    await Future.delayed(const Duration(seconds: 2));
+    setState(() {});
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,10 +28,10 @@ class ProfileScreen extends StatelessWidget {
         backgroundColor: Colors.white,
         foregroundColor: Colors.black,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.center,
+      body: RefreshWrapper( // ✅ Using global refresh widget
+        onRefresh: _handleRefresh,
+        child: ListView(
+          padding: const EdgeInsets.all(24),
           children: [
             const SizedBox(height: 100),
             const CircleAvatar(
@@ -28,22 +40,26 @@ class ProfileScreen extends StatelessWidget {
               child: Icon(Icons.person, size: 50, color: Colors.white),
             ),
             const SizedBox(height: 20),
-            const Text(
-              'Welcome!',
-              style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+            const Center(
+              child: Text(
+                'Welcome!',
+                style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(height: 40),
-            ElevatedButton.icon(
-              onPressed: () {
-                authProvider.logout(context);
-              },
-              icon: const Icon(Icons.logout),
-              label: const Text("Logout"),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFEB5E00),
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            Center(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  authProvider.logout(context);
+                },
+                icon: const Icon(Icons.logout),
+                label: const Text("Logout"),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFEB5E00),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
               ),
             ),
           ],

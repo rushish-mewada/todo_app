@@ -45,6 +45,7 @@ dependencies:
   path_provider: ^2.1.2
   cupertino_icons: ^1.0.8
   uuid: ^4.3.3
+  liquid_pull_to_refresh: ^3.0.1
 
   flutter:
     sdk: flutter
