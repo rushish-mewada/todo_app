@@ -46,6 +46,8 @@ dependencies:
   cupertino_icons: ^1.0.8
   uuid: ^4.3.3
   liquid_pull_to_refresh: ^3.0.1
+  image_picker: ^1.1.0
+  firebase_storage: ^11.7.0
 
   flutter:
     sdk: flutter
@@ -87,6 +89,10 @@ flutter:
     - assets/onboarding3.png
     - assets/login_bg.png
     - assets/empty_state.png
+    - assets/profilebg.png
+    - assets/editprofile.png
+    - assets/changepass.png
+    - assets/logout.png
 
   fonts:
     - family: SFProDisplay

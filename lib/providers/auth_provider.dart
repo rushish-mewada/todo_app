@@ -6,12 +6,15 @@ class AuthProvider with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
+  User? get currentUser => _auth.currentUser;
+
   Future<void> loginWithEmail(String email, String password, BuildContext context) async {
     try {
       await _auth.signInWithEmailAndPassword(email: email, password: password);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Login successful")),
       );
+      notifyListeners();
       Navigator.pushReplacementNamed(context, '/home');
     } on FirebaseAuthException catch (e) {
       String message;
@@ -39,9 +42,9 @@ class AuthProvider with ChangeNotifier {
     }
   }
 
-  Future<void> logout(BuildContext context) async {
+  Future<void> signOut() async {
     await _auth.signOut();
-    Navigator.pushReplacementNamed(context, '/login');
+    notifyListeners();
   }
 
   Future<bool> signupWithEmail({
@@ -68,12 +71,12 @@ class AuthProvider with ChangeNotifier {
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
-
+      notifyListeners();
       return true;
     } on FirebaseAuthException catch (e) {
-      throw e;
+      rethrow;
     } catch (e) {
-      throw e;
+      rethrow;
     }
   }
 }
