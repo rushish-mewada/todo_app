@@ -5,7 +5,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart' as firebase_storage;
 import 'package:path_provider/path_provider.dart';
+import 'package:http/http.dart' as http;
 
 import '../widgets/bot_nav.dart';
 import '../providers/auth_provider.dart';
@@ -20,7 +22,8 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
-  File? _profileImageFile;
+  File? _localProfileImageFile;
+  bool _isUploading = false;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -28,6 +31,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   String? _selectedGender;
 
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final firebase_storage.FirebaseStorage _storage = firebase_storage.FirebaseStorage.instance;
 
   @override
   void initState() {
@@ -45,72 +49,125 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Future<void> _loadUserData() async {
     final user = fb_auth.FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      _nameController.text = user.displayName ?? 'John Doe';
-      _emailController.text = user.email ?? 'john.doe@example.com';
+    if (user == null) return;
 
-      final userDoc = await _firestore.collection('users').doc(user.uid).get();
-      if (userDoc.exists) {
-        final userData = userDoc.data();
-        _phoneController.text = userData?['phoneNumber'] ?? 'N/A';
-        _selectedGender = userData?['gender'];
-        final localImagePath = userData?['profileImg'];
+    _nameController.text = user.displayName ?? 'John Doe';
+    _emailController.text = user.email ?? 'john.doe@example.com';
 
-        if (localImagePath != null && localImagePath.isNotEmpty) {
-          final file = File(localImagePath);
-          if (await file.exists()) {
-            _profileImageFile = file;
-          } else {
-            _profileImageFile = null;
-          }
-        } else {
-          _profileImageFile = null;
-        }
-      } else {
-        await _firestore.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'name': user.displayName ?? 'John Doe',
-          'email': user.email ?? 'john.doe@example.com',
-          'createdAt': FieldValue.serverTimestamp(),
-          'phoneNumber': 'N/A',
-          'gender': 'Male',
-          'profileImg': null,
-        }, SetOptions(merge: true));
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+
+    if (!userDoc.exists) {
+      await _firestore.collection('users').doc(user.uid).set({
+        'uid': user.uid,
+        'name': user.displayName ?? 'John Doe',
+        'email': user.email ?? 'john.doe@example.com',
+        'createdAt': FieldValue.serverTimestamp(),
+        'phoneNumber': 'N/A',
+        'gender': 'Male',
+        'profileImgUrl': null,
+        'localProfilePath': null,
+      }, SetOptions(merge: true));
+      if (mounted) setState(() {});
+      return;
+    }
+
+    final userData = userDoc.data()!;
+    _phoneController.text = userData['phoneNumber'] ?? 'N/A';
+    _selectedGender = userData['gender'];
+    final localPath = userData['localProfilePath'];
+    final remoteUrl = userData['profileImgUrl'];
+
+    if (localPath != null) {
+      final localFile = File(localPath);
+      if (await localFile.exists()) {
+        setState(() {
+          _localProfileImageFile = localFile;
+        });
+        return;
       }
-      setState(() {});
+    }
+
+    if (remoteUrl != null) {
+      await _downloadAndCacheImage(remoteUrl, user.uid);
     }
   }
 
-  Future<void> _pickProfileImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+  Future<void> _downloadAndCacheImage(String url, String userId) async {
+    try {
+      // Explicitly define the response type and check the status code
+      final http.Response response = await http.get(Uri.parse(url));
 
-    if (image != null) {
-      final appDocDir = await getApplicationDocumentsDirectory();
-      final profileImagesDir = Directory('${appDocDir.path}/profile_images');
+      if (response.statusCode == 200) {
+        final bytes = response.bodyBytes;
+        final appDocDir = await getApplicationDocumentsDirectory();
+        final localPath = '${appDocDir.path}/profile_$userId.jpg';
+        final file = File(localPath);
+        await file.writeAsBytes(bytes);
 
-      if (!await profileImagesDir.exists()) {
-        await profileImagesDir.create(recursive: true);
+        await _firestore.collection('users').doc(userId).update({
+          'localProfilePath': localPath,
+        });
+
+        if (mounted) {
+          setState(() {
+            _localProfileImageFile = file;
+          });
+        }
+      } else {
+        // Log an error if the download fails
+        print('Failed to download image. Status code: ${response.statusCode}');
       }
+    } catch (e) {
+      print('Error downloading image: $e');
+    }
+  }
 
-      final localPath = '${profileImagesDir.path}/${fb_auth.FirebaseAuth.instance.currentUser!.uid}_profile.jpg';
-      final newImageFile = await File(image.path).copy(localPath);
+  Future<void> _pickAndUploadImage() async {
+    final ImagePicker picker = ImagePicker();
+    final XFile? image = await picker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
 
-      setState(() {
-        _profileImageFile = newImageFile;
+    if (image == null) return;
+
+    setState(() => _isUploading = true);
+
+    try {
+      final user = fb_auth.FirebaseAuth.instance.currentUser;
+      if (user == null) throw Exception('User not logged in');
+      final userEmail = user.email;
+      if (userEmail == null) throw Exception('User email is not available.');
+
+      final pickedFile = File(image.path);
+
+      final appDocDir = await getApplicationDocumentsDirectory();
+      final localPath = '${appDocDir.path}/profile_${user.uid}.jpg';
+      final localFile = await pickedFile.copy(localPath);
+
+      final destination = 'avatars/$userEmail/profile_image.jpg';
+      final ref = _storage.ref(destination);
+      await ref.putFile(localFile);
+      final imageUrl = await ref.getDownloadURL();
+
+      await _firestore.collection('users').doc(user.uid).update({
+        'profileImgUrl': imageUrl,
+        'localProfilePath': localPath,
       });
 
-      final user = fb_auth.FirebaseAuth.instance.currentUser;
-      if (user != null) {
-        await _firestore.collection('users').doc(user.uid).set(
-          {'profileImg': localPath},
-          SetOptions(merge: true),
-        );
-      }
+      setState(() {
+        _localProfileImageFile = localFile;
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile image Updated!')),
+        const SnackBar(content: Text('Profile image updated!')),
       );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to upload image: $e')),
+      );
+    } finally {
+      setState(() => _isUploading = false);
     }
   }
 
@@ -133,28 +190,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   await user.updateDisplayName(newName);
                 }
 
-                await _firestore.collection('users').doc(user.uid).set({
+                await _firestore.collection('users').doc(user.uid).update({
                   'name': newName,
                   'email': newEmail,
                   'phoneNumber': newPhone,
                   'gender': newGender,
-                }, SetOptions(merge: true));
+                });
 
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Profile updated successfully!')),
                 );
                 Navigator.pop(context);
-              } on fb_auth.FirebaseAuthException catch (e) {
-                String message = 'Failed to update profile: ${e.message}';
-                if (e.code == 'requires-recent-login') {
-                  message = 'Please re-login to update your email/password.';
-                }
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(message)),
-                );
+                _loadUserData();
               } catch (e) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('An unexpected error occurred: $e')),
+                  SnackBar(content: Text('Failed to update profile: $e')),
                 );
               }
             }
@@ -162,39 +212,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
-    _loadUserData();
   }
 
   Future<void> _changePassword() async {
     final user = fb_auth.FirebaseAuth.instance.currentUser;
-    if (user == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No user logged in.')),
-      );
-      return;
-    }
-
+    if (user == null) return;
     try {
       await fb_auth.FirebaseAuth.instance.sendPasswordResetEmail(email: user.email!);
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Password reset email sent. Check your inbox to reset your password.'),
+          content: Text('Password reset email sent. Check your inbox.'),
           duration: Duration(seconds: 5),
         ),
       );
-    } on fb_auth.FirebaseAuthException catch (e) {
-      String message;
-      if (e.code == 'user-not-found') {
-        message = 'No user found for that email.';
-      } else {
-        message = 'Failed to send password reset email: ${e.message}';
-      }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('An unexpected error occurred: $e')),
+        SnackBar(content: Text('Failed to send reset email: $e')),
       );
     }
   }
@@ -223,11 +256,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   Widget build(BuildContext context) {
     final screenHeight = MediaQuery.of(context).size.height;
     const double profilePictureRadius = 60;
-
-    final double backgroundImageEndPercentage = 0.30;
-
-    final double backgroundHeight = screenHeight * backgroundImageEndPercentage;
-
+    final double backgroundHeight = screenHeight * 0.30;
     final double profilePictureTop = backgroundHeight - profilePictureRadius;
 
     return Scaffold(
@@ -273,17 +302,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: Colors.black.withOpacity(0.15),
                           offset: const Offset(0, 4),
                           blurRadius: 15,
-                          spreadRadius: 0,
                         ),
                       ],
                     ),
                     child: CircleAvatar(
                       radius: profilePictureRadius,
                       backgroundColor: Colors.grey[200],
-                      backgroundImage: _profileImageFile != null
-                          ? FileImage(_profileImageFile!)
+                      backgroundImage: _localProfileImageFile != null
+                          ? FileImage(_localProfileImageFile!)
                           : null,
-                      child: _profileImageFile == null
+                      child: _localProfileImageFile == null
                           ? Icon(
                         Icons.person,
                         size: profilePictureRadius * 4 / 3,
@@ -296,11 +324,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     right: 0,
                     bottom: 0,
                     child: GestureDetector(
-                      onTap: _pickProfileImage,
-                      child: const CircleAvatar(
+                      onTap: _isUploading ? null : _pickAndUploadImage,
+                      child: CircleAvatar(
                         radius: 18,
-                        backgroundColor: Color(0xFFEB5E00),
-                        child: Icon(
+                        backgroundColor: const Color(0xFFEB5E00),
+                        child: _isUploading
+                            ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                            : const Icon(
                           Icons.edit,
                           color: Colors.white,
                           size: 18,
@@ -337,7 +374,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 const SizedBox(height: 40),
-
                 Expanded(
                   child: ListView(
                     padding: const EdgeInsets.symmetric(horizontal: 24.0),
@@ -347,8 +383,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         imagePath: 'assets/editprofile.png',
                         title: "Edit Profile",
                         onTap: _showEditProfileModal,
-                        iconColor: const Color(0xFFEB5E00),
-                        textColor: const Color(0xFF505050),
                       ),
                       const SizedBox(height: 16),
                       _buildMenuItem(
@@ -356,8 +390,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         imagePath: 'assets/changepass.png',
                         title: "Change Password",
                         onTap: _changePassword,
-                        iconColor: const Color(0xFFEB5E00),
-                        textColor: const Color(0xFF505050),
                       ),
                       const SizedBox(height: 16),
                       _buildMenuItem(
@@ -366,7 +398,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         title: "Log out",
                         onTap: _showLogoutConfirmation,
                         iconColor: const Color(0xFFE91E63),
-                        textColor: const Color(0xFF505050),
                       ),
                     ],
                   ),
@@ -391,13 +422,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, {
-    required String imagePath,
-    required String title,
-    required VoidCallback onTap,
-    Color? iconColor,
-    Color textColor = Colors.black87,
-  }) {
+  Widget _buildMenuItem(
+      BuildContext context, {
+        required String imagePath,
+        required String title,
+        required VoidCallback onTap,
+        Color? iconColor,
+      }) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
@@ -414,38 +445,24 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ],
         ),
-        child: Column(
+        child: Row(
           children: [
-            Row(
-              children: [
-                Image.asset(
-                  imagePath,
-                  width: 40,
-                  height: 40,
-                  color: iconColor,
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    title,
-                    style: TextStyle(
-                      fontSize: 18,
-                      color: textColor,
-                    ),
-                  ),
-                ),
-                Icon(Icons.arrow_forward_ios, color: Colors.grey[400], size: 18),
-              ],
+            Image.asset(
+              imagePath,
+              width: 40,
+              height: 40,
+              color: iconColor,
             ),
-            if (title != "Log out")
-              Padding(
-                padding: const EdgeInsets.only(top: 16.0, left: 48.0),
-                child: Divider(
-                  color: Colors.grey[300],
-                  thickness: 1,
-                  height: 0,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
                 ),
               ),
+            ),
+            Icon(Icons.arrow_forward_ios, color: Colors.grey[400], size: 18),
           ],
         ),
       ),

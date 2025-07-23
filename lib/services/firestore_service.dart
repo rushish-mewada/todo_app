@@ -13,7 +13,6 @@ class FirestoreService {
     return _firestore.collection('users').doc(uid).collection('tasks');
   }
 
-  /// Call this method after modifying Hive data
   static Future<void> syncWithFirestore() async {
     final connectivity = await Connectivity().checkConnectivity();
     if (connectivity == ConnectivityResult.none) {

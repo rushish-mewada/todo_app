@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../models/todo.dart';
 import 'add_todo_helpers/pick_date_sheet.dart';
@@ -179,7 +177,8 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     }
   }
 
-  void _handleSubmit() async {
+  // MODIFIED METHOD
+  void _handleSubmit() {
     final title = titleController.text.trim();
     if (title.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -188,7 +187,16 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
       return;
     }
 
-    final newTodo = Todo(
+    // 1. Create the Todo object, preserving existing data if editing.
+    final todoToSave = Todo(
+      // Keep original data if it exists, otherwise provide defaults
+      firebaseId: widget.existingTodo?.firebaseId,
+      status: widget.existingTodo?.status ?? 'To-Do',
+      isCompleted: widget.existingTodo?.isCompleted ?? false,
+      // Mark as needing an update only if we are editing an existing item
+      needsUpdate: widget.existingTodo != null,
+
+      // Get the rest of the fields from the form
       title: title,
       description: descriptionController.text.trim(),
       emoji: selectedEmoji,
@@ -197,70 +205,26 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
       priority: selectedPriority,
     );
 
+    // 2. Get the Hive box.
     final box = Hive.box<Todo>('todos');
 
-    try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser != null) {
-        final tasksCollection = FirebaseFirestore.instance
-            .collection('users')
-            .doc(currentUser.uid)
-            .collection('tasks');
-
-        final docRef = widget.existingTodo?.firebaseId != null
-            ? tasksCollection.doc(widget.existingTodo!.firebaseId)
-            : tasksCollection.doc();
-
-        final firebaseId = docRef.id;
-
-        final todoToSave = Todo(
-          title: newTodo.title,
-          description: newTodo.description,
-          emoji: newTodo.emoji,
-          date: newTodo.date,
-          time: newTodo.time,
-          priority: newTodo.priority,
-          isCompleted: newTodo.isCompleted,
-          status: newTodo.status,
-          firebaseId: firebaseId,
-        );
-
-        await docRef.set({
-          'title': todoToSave.title,
-          'description': todoToSave.description,
-          'emoji': todoToSave.emoji,
-          'date': todoToSave.date,
-          'time': todoToSave.time,
-          'priority': todoToSave.priority,
-          'isCompleted': todoToSave.isCompleted,
-          'status': todoToSave.status,
-          'firebaseId': todoToSave.firebaseId,
-          'createdAt': FieldValue.serverTimestamp(),
-        });
-
-        if (widget.existingTodo != null && widget.existingTodo!.key != null) {
-          await box.put(widget.existingTodo!.key, todoToSave);
-        } else {
-          await box.add(todoToSave);
-        }
-      } else {
-        throw Exception('User not signed in');
-      }
-    } catch (e) {
-      debugPrint('Firestore unavailable: saving to Hive only. Error: $e');
-      if (widget.existingTodo != null && widget.existingTodo!.key != null) {
-        await box.put(widget.existingTodo!.key, newTodo);
-      } else {
-        await box.add(newTodo);
-      }
+    // 3. Save to Hive. This is the ONLY save operation needed.
+    if (widget.existingTodo != null && widget.existingTodo!.key != null) {
+      // Use 'put' to update an existing item at its original key
+      box.put(widget.existingTodo!.key, todoToSave);
+    } else {
+      // Use 'add' to create a new item
+      box.add(todoToSave);
     }
 
+    // 4. Close the screen.
     if (mounted) Navigator.pop(context);
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Todo saved')),
+      SnackBar(content: Text('Todo ${widget.existingTodo != null ? "updated" : "saved"}')),
     );
   }
+
 
   @override
   Widget build(BuildContext context) {
@@ -287,10 +251,10 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
                     color: Color(0xFFEB5E00),
                     borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
                   ),
-                  child: const Center(
+                  child: Center(
                     child: Text(
-                      'New Todo',
-                      style: TextStyle(
+                      widget.existingTodo == null ? 'New Todo' : 'Edit Todo',
+                      style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
