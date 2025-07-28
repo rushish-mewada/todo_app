@@ -36,18 +36,43 @@ class Todo extends HiveObject {
   @HiveField(10)
   bool? needsUpdate;
 
+  @HiveField(11)
+  String type;
+
+  @HiveField(12)
+  String? content;
+
+  @HiveField(13)
+  List<String>? frequency;
+
+  @HiveField(14)
+  int? streak;
+
+  @HiveField(15)
+  String? lastCompletedDate;
+
+  @HiveField(16)
+  String? mood;
+
+
   Todo({
     required this.title,
-    required this.description,
-    required this.emoji,
-    required this.date,
-    required this.time,
-    required this.priority,
+    this.description = '',
+    this.emoji = '',
+    this.date = '',
+    this.time = '',
+    this.priority = 'Low',
     this.isCompleted = false,
     this.status = 'To-Do',
     this.firebaseId,
     this.isDeleted = false,
     this.needsUpdate = false,
+    this.type = 'To-Do',
+    this.content,
+    this.frequency,
+    this.streak,
+    this.lastCompletedDate,
+    this.mood,
   });
 
   Map<String, dynamic> toMap() {
@@ -63,6 +88,12 @@ class Todo extends HiveObject {
       'firebaseId': firebaseId,
       'isDeleted': isDeleted,
       'needsUpdate': needsUpdate,
+      'type': type,
+      'content': content,
+      'frequency': frequency,
+      'streak': streak,
+      'lastCompletedDate': lastCompletedDate,
+      'mood': mood,
     };
   }
 
@@ -73,12 +104,18 @@ class Todo extends HiveObject {
       emoji: map['emoji'] ?? '',
       date: map['date'] ?? '',
       time: map['time'] ?? '',
-      priority: map['priority'] ?? '',
+      priority: map['priority'] ?? 'Low',
       isCompleted: map['isCompleted'] ?? false,
       status: map['status'] ?? 'To-Do',
       firebaseId: map['firebaseId'],
       isDeleted: map['isDeleted'] ?? false,
       needsUpdate: map['needsUpdate'] ?? false,
+      type: map['type'] ?? 'To-Do',
+      content: map['content'],
+      frequency: map['frequency'] != null ? List<String>.from(map['frequency']) : null,
+      streak: map['streak'],
+      lastCompletedDate: map['lastCompletedDate'],
+      mood: map['mood'],
     );
   }
 }

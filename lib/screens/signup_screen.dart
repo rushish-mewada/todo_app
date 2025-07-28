@@ -1,25 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter/gestures.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
+import '../providers/auth_provider.dart';
 import '../providers/signup_provider.dart';
-import '../providers/auth_provider.dart' as my_auth;
 import '../widgets/password_field.dart';
 
-class SignupScreen extends StatelessWidget {
+class SignupScreen extends StatefulWidget {
   const SignupScreen({super.key});
 
   @override
+  State<SignupScreen> createState() => _SignupScreenState();
+}
+
+class _SignupScreenState extends State<SignupScreen> {
+  @override
   Widget build(BuildContext context) {
     final signupProvider = Provider.of<SignupProvider>(context);
-    final authProvider = Provider.of<my_auth.AuthProvider>(context, listen: false);
+    final authProvider = Provider.of<AuthProvider>(context, listen: false);
 
     return Scaffold(
       body: Stack(
         children: [
           SizedBox.expand(
-            child: Image.asset('assets/login_bg.png', fit: BoxFit.cover),
+            child: Image.asset('assets/signup_bg.png', fit: BoxFit.cover),
           ),
           Center(
             child: SingleChildScrollView(
@@ -84,7 +88,7 @@ class SignupScreen extends StatelessWidget {
                         TextField(
                           controller: signupProvider.nameController,
                           decoration: InputDecoration(
-                            hintText: 'Full Name',
+                            hintText: 'Name',
                             border: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(8),
                               borderSide: const BorderSide(color: Color(0xFFEFF0F6), width: 1),
@@ -115,75 +119,28 @@ class SignupScreen extends StatelessWidget {
                           hint: 'Confirm Password',
                           borderColor: const Color(0xFFEFF0F6),
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 24),
                         GestureDetector(
                           onTap: signupProvider.isLoading
                               ? null
                               : () async {
-                            final email = signupProvider.emailController.text.trim();
-                            final password = signupProvider.passwordController.text.trim();
-
-                            final emailRegex = RegExp(r"^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$");
-                            if (!emailRegex.hasMatch(email)) {
+                            if (signupProvider.passwordController.text !=
+                                signupProvider.confirmPasswordController.text) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Invalid Email')),
+                                const SnackBar(content: Text("Passwords do not match.")),
                               );
                               return;
                             }
-
-                            if (password.length < 6) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Password should be at least 6 characters')),
-                              );
-                              return;
-                            }
-
-                            if (password != signupProvider.confirmPasswordController.text) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Passwords do not match')),
-                              );
-                              return;
-                            }
-
                             signupProvider.toggleLoading();
-
-                            try {
-                              bool success = await authProvider.signupWithEmail(
-                                name: signupProvider.nameController.text.trim(),
-                                email: email,
-                                password: password,
-                              );
-
-                              if (success) {
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Signup successful')),
-                                );
-                                Navigator.pushReplacementNamed(context, '/home');
-                              }
-                            } on FirebaseAuthException catch (e) {
-                              String message;
-                              switch (e.code.trim().toLowerCase()) {
-                                case 'email-already-in-use':
-                                  message = 'Email already in use';
-                                  break;
-                                case 'invalid-email':
-                                  message = 'Invalid email address';
-                                  break;
-                                case 'weak-password':
-                                  message = 'Password should be at least 6 characters';
-                                  break;
-                                default:
-                                  message = 'Signup failed: ${e.message}';
-                              }
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text(message)),
-                              );
-                            } catch (e) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('An unexpected error occurred')),
-                              );
-                            } finally {
-                              signupProvider.toggleLoading();
+                            bool success = await authProvider.signupWithEmail(
+                              name: signupProvider.nameController.text.trim(),
+                              email: signupProvider.emailController.text.trim(),
+                              password: signupProvider.passwordController.text.trim(),
+                              context: context, // Pass the context here
+                            );
+                            signupProvider.toggleLoading();
+                            if (success) {
+                              Navigator.pushReplacementNamed(context, '/home');
                             }
                           },
                           child: Container(

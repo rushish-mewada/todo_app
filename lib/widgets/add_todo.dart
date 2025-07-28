@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:hive/hive.dart';
 import 'package:intl/intl.dart';
 
 import '../models/todo.dart';
@@ -24,14 +23,11 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
   final ScrollController scrollController = ScrollController();
 
   String selectedEmoji = '';
-  String selectedPriority = 'Medium';
+  String selectedPriority = 'Low'; // Default priority changed to Low
   DateTime? selectedDate;
   TimeOfDay? selectedTime;
 
   final List<String> emojis = ['😀', '🤑', '😇', '🥰', '🙌', '👋', '😓', '✌️'];
-
-  bool _titleEdited = false;
-  bool _descEdited = false;
 
   late AnimationController _controller;
   late Animation<Offset> _slideAnimation;
@@ -47,17 +43,28 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
       selectedEmoji = widget.existingTodo!.emoji;
       selectedPriority = widget.existingTodo!.priority;
       if (widget.existingTodo!.date.isNotEmpty) {
-        selectedDate = DateFormat.yMMMd().parse(widget.existingTodo!.date);
+        try {
+          selectedDate = DateFormat.yMMMd().parse(widget.existingTodo!.date);
+        } catch (e) {
+          print("Error parsing date: ${widget.existingTodo!.date}");
+        }
       }
       if (widget.existingTodo!.time.isNotEmpty) {
-        final timeParts = widget.existingTodo!.time.split(' ');
-        final hm = timeParts[0].split(':');
-        int hour = int.parse(hm[0]);
-        int minute = int.parse(hm[1]);
-        if (timeParts.length > 1 && timeParts[1].toLowerCase() == 'pm' && hour < 12) {
-          hour += 12;
+        try {
+          final timeParts = widget.existingTodo!.time.split(' ');
+          final hm = timeParts[0].split(':');
+          int hour = int.parse(hm[0]);
+          int minute = int.parse(hm[1]);
+          if (timeParts.length > 1 && timeParts[1].toLowerCase() == 'pm' && hour < 12) {
+            hour += 12;
+          }
+          if (timeParts.length > 1 && timeParts[1].toLowerCase() == 'am' && hour == 12) {
+            hour = 0;
+          }
+          selectedTime = TimeOfDay(hour: hour, minute: minute);
+        } catch (e) {
+          print("Error parsing time: ${widget.existingTodo!.time}");
         }
-        selectedTime = TimeOfDay(hour: hour, minute: minute);
       }
     }
 
@@ -67,9 +74,6 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     _fadeAnimation = Tween<double>(begin: 0, end: 1)
         .animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
     _controller.forward();
-
-    titleFocusNode.addListener(() => _scrollToField(titleFocusNode));
-    descFocusNode.addListener(() => _scrollToField(descFocusNode));
   }
 
   @override
@@ -83,18 +87,6 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     super.dispose();
   }
 
-  void _scrollToField(FocusNode focusNode) {
-    if (focusNode.hasFocus) {
-      Future.delayed(const Duration(milliseconds: 300), () {
-        scrollController.animateTo(
-          scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      });
-    }
-  }
-
   void insertEmojiAtCursor(String emoji) {
     TextEditingController controller;
     if (titleFocusNode.hasFocus) {
@@ -102,7 +94,8 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     } else if (descFocusNode.hasFocus) {
       controller = descriptionController;
     } else {
-      return;
+      // Default to title controller if no field is focused
+      controller = titleController;
     }
 
     final text = controller.text;
@@ -110,46 +103,28 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     final newText = text.replaceRange(selection.start, selection.end, emoji);
     final newPosition = selection.start + emoji.length;
 
+    controller.text = newText;
+    controller.selection = TextSelection.fromPosition(
+      TextPosition(offset: newPosition),
+    );
+
     setState(() {
       selectedEmoji = emoji;
-      controller.text = newText;
-      controller.selection = TextSelection.fromPosition(
-        TextPosition(offset: newPosition),
-      );
     });
   }
 
-  void _handleTitleChange(String value) {
-    if (!_titleEdited && value.isNotEmpty) {
-      _titleEdited = true;
-      final updated = value[0].toUpperCase() + value.substring(1);
-      titleController.value = TextEditingValue(
-        text: updated,
-        selection: TextSelection.collapsed(offset: updated.length),
-      );
-    }
-  }
-
-  void _handleDescChange(String value) {
-    if (!_descEdited && value.isNotEmpty) {
-      _descEdited = true;
-      final updated = value[0].toUpperCase() + value.substring(1);
-      descriptionController.value = TextEditingValue(
-        text: updated,
-        selection: TextSelection.collapsed(offset: updated.length),
-      );
-    }
-  }
-
   void _pickDate() async {
-    final picked = await showModalBottomSheet<DateTime>(
+    final pickedDate = await showModalBottomSheet<DateTime>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => PickDateSheet(initialDate: selectedDate),
     );
-    if (picked != null) {
-      setState(() => selectedDate = picked);
+    if (pickedDate != null) {
+      setState(() => selectedDate = pickedDate);
+      if (mounted) {
+        _pickTime();
+      }
     }
   }
 
@@ -177,7 +152,19 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
     }
   }
 
-  // MODIFIED METHOD
+  String _getPriorityLabel(String priority) {
+    switch (priority) {
+      case 'High':
+        return 'High Priority';
+      case 'Medium':
+        return 'Medium Priority';
+      case 'Low':
+        return 'Low Priority';
+      default:
+        return priority;
+    }
+  }
+
   void _handleSubmit() {
     final title = titleController.text.trim();
     if (title.isEmpty) {
@@ -187,44 +174,22 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
       return;
     }
 
-    // 1. Create the Todo object, preserving existing data if editing.
-    final todoToSave = Todo(
-      // Keep original data if it exists, otherwise provide defaults
-      firebaseId: widget.existingTodo?.firebaseId,
-      status: widget.existingTodo?.status ?? 'To-Do',
-      isCompleted: widget.existingTodo?.isCompleted ?? false,
-      // Mark as needing an update only if we are editing an existing item
-      needsUpdate: widget.existingTodo != null,
-
-      // Get the rest of the fields from the form
+    final todoToReturn = Todo(
       title: title,
       description: descriptionController.text.trim(),
       emoji: selectedEmoji,
       date: selectedDate != null ? DateFormat.yMMMd().format(selectedDate!) : '',
       time: selectedTime != null ? selectedTime!.format(context) : '',
       priority: selectedPriority,
+      isCompleted: widget.existingTodo?.isCompleted ?? false,
+      status: widget.existingTodo?.status ?? 'To-Do',
+      firebaseId: widget.existingTodo?.firebaseId,
+      isDeleted: widget.existingTodo?.isDeleted ?? false,
+      needsUpdate: widget.existingTodo?.needsUpdate ?? false,
     );
 
-    // 2. Get the Hive box.
-    final box = Hive.box<Todo>('todos');
-
-    // 3. Save to Hive. This is the ONLY save operation needed.
-    if (widget.existingTodo != null && widget.existingTodo!.key != null) {
-      // Use 'put' to update an existing item at its original key
-      box.put(widget.existingTodo!.key, todoToSave);
-    } else {
-      // Use 'add' to create a new item
-      box.add(todoToSave);
-    }
-
-    // 4. Close the screen.
-    if (mounted) Navigator.pop(context);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Todo ${widget.existingTodo != null ? "updated" : "saved"}')),
-    );
+    Navigator.pop(context, todoToReturn);
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -242,39 +207,38 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
               color: Colors.white,
               borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(vertical: 16),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFEB5E00),
-                    borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                  ),
-                  child: Center(
-                    child: Text(
-                      widget.existingTodo == null ? 'New Todo' : 'Edit Todo',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+            child: SingleChildScrollView(
+              controller: scrollController,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFEB5E00),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        widget.existingTodo == null ? 'New Todo' : 'Edit Todo',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
                       ),
                     ),
                   ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                  child: SingleChildScrollView(
-                    controller: scrollController,
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         TextField(
                           controller: titleController,
                           focusNode: titleFocusNode,
-                          onChanged: _handleTitleChange,
                           style: const TextStyle(
-                            fontSize: 16,
+                            fontSize: 18,
                             fontWeight: FontWeight.bold,
                             color: Colors.black,
                           ),
@@ -282,19 +246,23 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
                             hintText: 'Eg : Meeting with client',
                             border: InputBorder.none,
                             focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
                           ),
+                          textCapitalization: TextCapitalization.sentences,
                         ),
                         const SizedBox(height: 10),
                         TextField(
                           controller: descriptionController,
                           focusNode: descFocusNode,
-                          onChanged: _handleDescChange,
-                          maxLines: 2,
+                          maxLines: 3,
                           style: const TextStyle(fontSize: 16),
                           decoration: const InputDecoration(
                             hintText: 'Description',
                             border: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            enabledBorder: InputBorder.none,
                           ),
+                          textCapitalization: TextCapitalization.sentences,
                         ),
                         const SizedBox(height: 16),
                         Row(
@@ -322,7 +290,7 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
                             if (selectedPriority.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(left: 8),
-                                child: Text(selectedPriority, style: const TextStyle(fontSize: 12)),
+                                child: Text(_getPriorityLabel(selectedPriority), style: const TextStyle(fontSize: 12)),
                               ),
                           ],
                         ),
@@ -333,13 +301,15 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
                             final isSelected = emoji == selectedEmoji;
                             return GestureDetector(
                               onTap: () => insertEmojiAtCursor(emoji),
-                              child: Text(
-                                emoji,
-                                style: TextStyle(
-                                  fontSize: 24,
-                                  backgroundColor: isSelected
-                                      ? const Color(0xFFEB5E00).withOpacity(0.2)
-                                      : Colors.transparent,
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: isSelected ? const Color(0xFFEB5E00).withOpacity(0.2) : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Text(
+                                  emoji,
+                                  style: const TextStyle(fontSize: 24),
                                 ),
                               ),
                             );
@@ -363,8 +333,8 @@ class _AddTodoState extends State<AddTodo> with SingleTickerProviderStateMixin {
                       ],
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ),

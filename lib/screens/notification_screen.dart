@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:intl/intl.dart';
@@ -31,12 +32,22 @@ class _NotificationScreenState extends State<NotificationScreen> {
   }
 
   Future<void> generateNotifications() async {
-    final todos = todoBox.values.toList();
-    final now = DateTime.now();
-    final timestamp = DateFormat('MMM d, h:mm a').format(now);
-
     List<Map<String, String>> result = [];
+    result.addAll(_getPersistedChangeNotifications());
 
+    for (final key in todoBox.keys) {
+      final todo = todoBox.get(key);
+      if (todo == null) continue;
+
+      result.addAll(_generateNotificationsForTodo(todo, key));
+      _updatePreviousData(todo, key);
+    }
+
+    _finalizeAndUpdateState(result);
+  }
+
+  List<Map<String, String>> _getPersistedChangeNotifications() {
+    List<Map<String, String>> result = [];
     for (var key in activeChangeNotifKeysBox.keys) {
       final storedNotif = activeChangeNotifKeysBox.get(key);
       if (storedNotif != null && storedNotif is Map<dynamic, dynamic>) {
@@ -48,113 +59,153 @@ class _NotificationScreenState extends State<NotificationScreen> {
         });
       }
     }
+    return result;
+  }
 
-    for (var todo in todos) {
-      if (todo.date.isEmpty || todo.time.isEmpty) continue;
+  List<Map<String, String>> _generateNotificationsForTodo(Todo todo, dynamic key) {
+    final List<Map<String, String>> generated = [];
+    final now = DateTime.now();
+    final timestamp = DateFormat('MMM d, h:mm a').format(now);
 
-      DateTime? fullDateTime;
+    final prevMap = previousDataBox.get(key);
+    final prevPriority = prevMap?['priority'];
+    final prevDate = prevMap?['date'];
+    final prevTime = prevMap?['time'];
+
+    void addNotif(String type, String msg, {bool isChangeNotif = false}) {
+      String notifKey;
+      if (type == '🗓️ Date Changed') {
+        notifKey = '${key}_date_changed_${todo.date}';
+      } else if (type == '🕐 Time Changed') {
+        notifKey = '${key}_time_changed_${todo.time}';
+      } else if (type == '⬆️ Priority Changed') {
+        notifKey = '${key}_priority_changed_${todo.priority}';
+      } else {
+        notifKey = '${key}_${type.hashCode}';
+      }
+
+      if (!dismissedBox.containsKey(notifKey)) {
+        final newNotif = {
+          'type': type,
+          'message': msg,
+          'key': notifKey,
+          'timestamp': timestamp,
+        };
+        generated.add(newNotif);
+        if (isChangeNotif) {
+          activeChangeNotifKeysBox.put(notifKey, newNotif);
+        }
+      }
+    }
+
+    if (todo.date.isNotEmpty && todo.time.isNotEmpty) {
       try {
         final dateTimeStr = '${todo.date} ${todo.time.toUpperCase()}';
-        fullDateTime = DateFormat('yMMMd h:mm a').parseStrict(dateTimeStr);
-      } catch (e) {
-        try {
-          fullDateTime = DateFormat('yMMMd').parseStrict(todo.date);
-        } catch (_) {
-          continue;
-        }
-      }
+        final fullDateTime = DateFormat('yMMMd h:mm a').parseStrict(dateTimeStr);
+        final timeDiff = fullDateTime.difference(now);
 
-      final timeDiff = fullDateTime.difference(now);
-      final prevMap = previousDataBox.get(todo.key);
-      final prevPriority = prevMap?['priority'];
-      final prevDate = prevMap?['date'];
-      final prevTime = prevMap?['time'];
-
-      void addNotif(String type, String msg, {bool isChangeNotif = false}) {
-        String key;
-        if (type == '🗓️ Date Changed') {
-          key = '${todo.key}_date_changed_${todo.date}';
-        } else if (type == '🕐 Time Changed') {
-          key = '${todo.key}_time_changed_${todo.time}';
-        } else if (type == '⬆️ Priority Changed') {
-          key = '${todo.key}_priority_changed_${todo.priority}';
-        } else if (type == '✏️ Task Updated') {
-          key = '${todo.key}_task_updated';
-        } else {
-          key = '${todo.key}_$type';
-        }
-
-        if (!dismissedBox.containsKey(key)) {
-          final newNotif = {
-            'type': type,
-            'message': msg,
-            'key': key,
-            'timestamp': timestamp,
-          };
-          result.add(newNotif);
-          if (isChangeNotif) {
-            activeChangeNotifKeysBox.put(key, newNotif);
-          }
-        }
-      }
-
-      if (timeDiff.inDays < 0) {
-        addNotif('🚨 Overdue Reminder', 'Task "${todo.title}" is overdue by ${timeDiff.inDays.abs()} day${timeDiff.inDays.abs() > 1 ? 's' : ''}!');
-      }
-
-      if (todo.isCompleted == true || todo.status == 'Completed') {
-        addNotif('✅ Task Completed', 'Good job! You completed "${todo.title}".');
-      } else if (todo.status == 'In Progress') {
-        addNotif('🚧 Task In Progress', 'You started working on "${todo.title}". Keep it going!');
-      } else if (todo.needsUpdate == true) {
-        addNotif('✏️ Task Updated', 'You made changes to "${todo.title}".');
-      } else {
-        if (fullDateTime.isAfter(now) && timeDiff.inMinutes <= 30 && timeDiff.inMinutes > 0) {
+        if (timeDiff.inDays < 0) {
+          addNotif('🚨 Overdue Reminder', 'Task "${todo.title}" is overdue by ${timeDiff.inDays.abs()} day${timeDiff.inDays.abs() > 1 ? 's' : ''}!');
+        } else if (fullDateTime.isAfter(now) && timeDiff.inMinutes <= 30 && timeDiff.inMinutes > 0) {
           addNotif('🔔 Reminder', 'Your task "${todo.title}" starts in ${timeDiff.inMinutes} minute${timeDiff.inMinutes > 1 ? 's' : ''}. Get ready!');
-        } else if (fullDateTime.isBefore(now) && (todo.isCompleted == false) && todo.status != 'Completed') {
+        } else if (fullDateTime.isBefore(now) && todo.isCompleted != true && todo.status != 'Completed') {
           addNotif('⏳ Task Due', 'Don\'t forget to complete "${todo.title}" before the deadline.');
         } else if (fullDateTime.isAfter(now)) {
           addNotif('⏳ Upcoming Task', 'Upcoming: "${todo.title}" is scheduled soon. Stay prepared!');
         }
-      }
-
-      if (prevDate != null && prevDate != todo.date) {
-        addNotif('🗓️ Date Changed', 'Task "${todo.title}" was rescheduled to ${todo.date}.', isChangeNotif: true);
-      }
-
-      if (prevTime != null && prevTime != todo.time) {
-        addNotif('🕐 Time Changed', 'Task "${todo.title}" time updated to ${todo.time}.', isChangeNotif: true);
-      }
-
-      if (prevPriority != null && prevPriority != todo.priority) {
-        addNotif('⬆️ Priority Changed', 'Task "${todo.title}" priority changed from $prevPriority to ${todo.priority}.', isChangeNotif: true);
-      }
-
-      previousDataBox.put(todo.key, {
-        'priority': todo.priority,
-        'date': todo.date,
-        'time': todo.time,
-      });
+      } catch (e) { }
     }
 
+    switch (todo.type) {
+      case 'List':
+        final progress = _getListProgress(todo.content);
+        if (progress > 0 && progress < 100) {
+          addNotif('📊 List Progress', "$progress% of items completed in '${todo.title}'.");
+        }
+        break;
+      case 'Journal':
+        try {
+          final entryDate = DateFormat.yMMMd().parseStrict(todo.date);
+          if (entryDate.month == now.month && entryDate.day == now.day && entryDate.year < now.year) {
+            final yearsAgo = now.year - entryDate.year;
+            addNotif('🗓️ Journal Throwback', 'From ${yearsAgo} year${yearsAgo > 1 ? 's' : ''} ago: "${todo.title}"');
+          }
+        } catch(e) { }
+        break;
+      case 'Habit':
+        addNotif('🎯 Habit Reminder', 'Don\'t forget to complete your habit: "${todo.title}".');
+        if ((todo.streak ?? 0) > 1) {
+          addNotif('🔥 Streak Alert', "You're on a ${todo.streak}-day streak for \"${todo.title}\". Keep it up!");
+        }
+        break;
+      case 'Note':
+        if (todo.date.isNotEmpty) {
+          addNotif('📌 Note Reminder', 'Reminder for your note "${todo.title}" on ${todo.date}.');
+        }
+        break;
+    }
+
+    if (todo.isCompleted == true || todo.status == 'Completed') {
+      addNotif('✅ Task Completed', 'Good job! You completed "${todo.title}".');
+    } else if (todo.status == 'In Progress') {
+      addNotif('🚧 Task In Progress', 'You started working on "${todo.title}". Keep it going!');
+    } else if (todo.needsUpdate == true) {
+      addNotif('✏️ Task Updated', 'You made changes to "${todo.title}".');
+    }
+
+    if (prevDate != null && prevDate != todo.date) {
+      addNotif('🗓️ Date Changed', 'Task "${todo.title}" was rescheduled to ${todo.date}.', isChangeNotif: true);
+    }
+    if (prevTime != null && prevTime != todo.time) {
+      addNotif('🕐 Time Changed', 'Task "${todo.title}" time updated to ${todo.time}.', isChangeNotif: true);
+    }
+    if (prevPriority != null && prevPriority != todo.priority) {
+      addNotif('⬆️ Priority Changed', 'Task "${todo.title}" priority changed from $prevPriority to ${todo.priority}.', isChangeNotif: true);
+    }
+
+    return generated;
+  }
+
+  int _getListProgress(String? content) {
+    if (content == null || content.isEmpty) return 0;
+    try {
+      final List<dynamic> items = jsonDecode(content);
+      if (items.isEmpty) return 0;
+      final int completedCount = items.where((item) => (item['checked'] as bool? ?? false)).length;
+      return ((completedCount / items.length) * 100).round();
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  void _updatePreviousData(Todo todo, dynamic key) {
+    previousDataBox.put(key, {
+      'priority': todo.priority,
+      'date': todo.date,
+      'time': todo.time,
+    });
+  }
+
+  void _finalizeAndUpdateState(List<Map<String, String>> allNotifications) {
     final uniqueResults = <String, Map<String, String>>{};
-    for (var notif in result) {
+    for (var notif in allNotifications) {
       uniqueResults[notif['key']!] = notif;
     }
-    result = uniqueResults.values.toList();
 
-    if (result.isEmpty) {
-      result.add({
+    List<Map<String, String>> finalNotifications = uniqueResults.values.toList();
+
+    if (finalNotifications.isEmpty) {
+      finalNotifications.add({
         'type': '',
         'message': 'No notifications for today.',
         'key': 'none',
-        'timestamp': timestamp,
+        'timestamp': DateFormat('MMM d, h:mm a').format(DateTime.now()),
       });
     }
 
     if (!mounted) return;
     setState(() {
-      notifications = result;
+      notifications = finalNotifications;
     });
   }
 
@@ -167,6 +218,9 @@ class _NotificationScreenState extends State<NotificationScreen> {
     }
     setState(() {
       notifications.removeAt(index);
+      if (notifications.isEmpty) {
+        _finalizeAndUpdateState([]);
+      }
     });
   }
 
@@ -178,9 +232,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         activeChangeNotifKeysBox.delete(key);
       }
     }
-    setState(() {
-      notifications.clear();
-    });
+    _finalizeAndUpdateState([]);
   }
 
   @override
@@ -196,7 +248,7 @@ class _NotificationScreenState extends State<NotificationScreen> {
         backgroundColor: Colors.white,
         actions: [
           if (notifications.isNotEmpty &&
-              !(notifications.length == 1 && notifications[0]['type'] == ''))
+              !(notifications.length == 1 && notifications[0]['key'] == 'none'))
             TextButton(
               onPressed: clearAllNotifications,
               child: const Text(

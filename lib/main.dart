@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import 'firebase_options.dart';
 import 'models/todo.dart';
+import 'models/user_profile.dart'; // Import the UserProfile model
 import 'providers/auth_provider.dart';
 import 'providers/login_provider.dart';
 import 'providers/signup_provider.dart';
@@ -27,11 +28,13 @@ void main() async {
 
   await Hive.initFlutter();
   Hive.registerAdapter(TodoAdapter());
+  Hive.registerAdapter(UserProfileAdapter());
 
   await Hive.openBox<Todo>('todos');
   await Hive.openBox('dismissed_notifications');
   await Hive.openBox('previous_todo_data');
   await Hive.openBox('active_change_notification_keys');
+  await Hive.openBox<UserProfile>('user_profile');
 
   final shownBox = await Hive.openBox('shown_notifications');
 

@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // Import for FilteringTextInputFormatter and LengthLimitingTextInputFormatter
+import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb_auth;
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -8,6 +8,7 @@ typedef OnProfileSave = Future<void> Function(
     String newEmail,
     String newPhone,
     String? newGender,
+    String newRole,
     );
 
 class EditProfileModal extends StatefulWidget {
@@ -15,6 +16,7 @@ class EditProfileModal extends StatefulWidget {
   final String initialEmail;
   final String initialPhone;
   final String? initialGender;
+  final String? initialRole;
   final OnProfileSave onSave;
 
   const EditProfileModal({
@@ -23,6 +25,7 @@ class EditProfileModal extends StatefulWidget {
     required this.initialEmail,
     required this.initialPhone,
     this.initialGender,
+    this.initialRole, // Added to constructor
     required this.onSave,
   });
 
@@ -34,11 +37,10 @@ class _EditProfileModalState extends State<EditProfileModal> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _roleController = TextEditingController(); // Controller for role
   String? _selectedGender;
 
   final GlobalKey _genderFieldKey = GlobalKey();
-
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   @override
   void initState() {
@@ -47,6 +49,7 @@ class _EditProfileModalState extends State<EditProfileModal> {
     _emailController.text = widget.initialEmail;
     _phoneController.text = widget.initialPhone;
     _selectedGender = widget.initialGender;
+    _roleController.text = widget.initialRole ?? ''; // Initialize role controller
   }
 
   @override
@@ -54,11 +57,13 @@ class _EditProfileModalState extends State<EditProfileModal> {
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
+    _roleController.dispose(); // Dispose role controller
     super.dispose();
   }
 
   void _showGenderDropdown(BuildContext context) async {
-    final RenderBox renderBox = _genderFieldKey.currentContext!.findRenderObject() as RenderBox;
+    final RenderBox renderBox =
+    _genderFieldKey.currentContext!.findRenderObject() as RenderBox;
     final Offset offset = renderBox.localToGlobal(Offset.zero);
     final Size size = renderBox.size;
 
@@ -131,6 +136,7 @@ class _EditProfileModalState extends State<EditProfileModal> {
       _emailController.text,
       _phoneController.text,
       _selectedGender,
+      _roleController.text, // Pass the new role
     );
   }
 
@@ -252,8 +258,32 @@ class _EditProfileModalState extends State<EditProfileModal> {
                     keyboardType: TextInputType.phone,
                     inputFormatters: [
                       FilteringTextInputFormatter.digitsOnly,
-                      LengthLimitingTextInputFormatter(10), // Limit to 10 digits
+                      LengthLimitingTextInputFormatter(10),
                     ],
+                  ),
+                  const SizedBox(height: 16),
+                  // New TextField for Role
+                  TextField(
+                    controller: _roleController,
+                    decoration: InputDecoration(
+                      labelText: "Role",
+                      labelStyle: TextStyle(color: Colors.grey[600]),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[400]!),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: BorderSide(color: Colors.grey[400]!),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        borderSide: const BorderSide(color: Color(0xFFEB5E00)),
+                      ),
+                      prefixIcon: Icon(Icons.work, color: Colors.grey[600]),
+                      fillColor: Colors.white,
+                      filled: true,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   GestureDetector(

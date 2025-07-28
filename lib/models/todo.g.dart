@@ -28,13 +28,19 @@ class TodoAdapter extends TypeAdapter<Todo> {
       firebaseId: fields[8] as String?,
       isDeleted: fields[9] as bool?,
       needsUpdate: fields[10] as bool?,
+      type: fields[11] as String,
+      content: fields[12] as String?,
+      frequency: (fields[13] as List?)?.cast<String>(),
+      streak: fields[14] as int?,
+      lastCompletedDate: fields[15] as String?,
+      mood: fields[16] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Todo obj) {
     writer
-      ..writeByte(11)
+      ..writeByte(17)
       ..writeByte(0)
       ..write(obj.title)
       ..writeByte(1)
@@ -56,7 +62,19 @@ class TodoAdapter extends TypeAdapter<Todo> {
       ..writeByte(9)
       ..write(obj.isDeleted)
       ..writeByte(10)
-      ..write(obj.needsUpdate);
+      ..write(obj.needsUpdate)
+      ..writeByte(11)
+      ..write(obj.type)
+      ..writeByte(12)
+      ..write(obj.content)
+      ..writeByte(13)
+      ..write(obj.frequency)
+      ..writeByte(14)
+      ..write(obj.streak)
+      ..writeByte(15)
+      ..write(obj.lastCompletedDate)
+      ..writeByte(16)
+      ..write(obj.mood);
   }
 
   @override

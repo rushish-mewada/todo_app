@@ -1,32 +1,21 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../models/todo.dart';
 
-class TaskCard extends StatelessWidget {
+class HabitCard extends StatelessWidget {
   final Todo todo;
   final VoidCallback? onEdit;
   final VoidCallback? onDelete;
-  final Function(String)? onStatusChange;
 
-  const TaskCard({
+  const HabitCard({
     super.key,
     required this.todo,
     this.onEdit,
     this.onDelete,
-    this.onStatusChange,
   });
 
   Widget _getIconForType(String type) {
-    switch (type) {
-      case 'Note':
-        return const Icon(Icons.notes_rounded, color: Color(0xFFEB5E00));
-      case 'Habit':
-        return const Icon(Icons.repeat, color: Color(0xFFEB5E00));
-      case 'Journal':
-        return const Icon(Icons.book, color: Color(0xFFEB5E00));
-      case 'To-Do':
-      default:
-        return const Icon(Icons.check_circle_outline, color: Color(0xFFEB5E00));
-    }
+    return const Icon(Icons.repeat, color: Color(0xFFEB5E00));
   }
 
   PopupMenuEntry<String> _buildPopupMenuItem(
@@ -51,17 +40,43 @@ class TaskCard extends StatelessWidget {
     );
   }
 
-  PopupMenuEntry<String> _buildPopupDivider() {
-    return const PopupMenuDivider(height: 1);
+  Widget _buildFrequencyDisplay(List<String> frequency) {
+    final List<String> displayDays = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final List<String> fullDayNames = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+    final Set<String> activeFullDays = frequency.map((d) => d.trim()).toSet();
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: List.generate(7, (index) {
+        final dayInitial = displayDays[index];
+        final fullDayName = fullDayNames[index];
+        final isActive = activeFullDays.contains(fullDayName);
+
+        return Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: isActive ? const Color(0xFFEB5E00) : Colors.grey.shade200,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              dayInitial,
+              style: TextStyle(
+                color: isActive ? Colors.white : Colors.black54,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        );
+      }),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final color = getPriorityColor(todo.priority);
-    final label = getPriorityLabel(todo.priority);
-    final statusColor = getStatusColor(todo.status ?? 'To-Do');
-    final statusText = todo.status ?? 'To-Do';
-
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
       decoration: BoxDecoration(
@@ -75,21 +90,15 @@ class TaskCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: color,
+              color: const Color(0xFF3D74B6),
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    const Icon(Icons.flag_outlined, color: Colors.white, size: 16),
-                    const SizedBox(width: 8),
-                    Text(
-                      label,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                    ),
-                  ],
+                Text(
+                  todo.type,
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                 ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_horiz, color: Colors.white),
@@ -100,11 +109,6 @@ class TaskCard extends StatelessWidget {
                         break;
                       case 'delete':
                         if (onDelete != null) onDelete!();
-                        break;
-                      case 'To-Do':
-                      case 'In Progress':
-                      case 'Completed':
-                        if (onStatusChange != null) onStatusChange!(value);
                         break;
                     }
                   },
@@ -117,13 +121,6 @@ class TaskCard extends StatelessWidget {
                   itemBuilder: (context) => [
                     _buildPopupMenuItem(Icons.edit, 'Edit', 'edit', Colors.black87, iconColor: const Color(0xFFEB5E00)),
                     _buildPopupMenuItem(Icons.delete, 'Delete', 'delete', Colors.redAccent),
-                    if (todo.type == 'To-Do') _buildPopupDivider(),
-                    if (todo.type == 'To-Do')
-                      _buildPopupMenuItem(Icons.pending_actions, 'Mark as To-Do', 'To-Do', Colors.black87),
-                    if (todo.type == 'To-Do')
-                      _buildPopupMenuItem(Icons.run_circle_outlined, 'Mark as In Progress', 'In Progress', Colors.black87),
-                    if (todo.type == 'To-Do')
-                      _buildPopupMenuItem(Icons.check_circle_outline, 'Mark as Completed', 'Completed', Colors.black87),
                   ],
                 ),
               ],
@@ -149,21 +146,9 @@ class TaskCard extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (todo.type == 'To-Do')
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: statusColor,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          statusText,
-                          style: const TextStyle(fontSize: 12, color: Colors.white),
-                        ),
-                      ),
                   ],
                 ),
-                if (todo.description.isNotEmpty)
+                if (todo.description.isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -171,7 +156,7 @@ class TaskCard extends StatelessWidget {
                       style: const TextStyle(fontSize: 14, color: Colors.black87),
                     ),
                   ),
-                if (todo.content != null && todo.content!.isNotEmpty)
+                if (todo.content?.isNotEmpty == true)
                   Padding(
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
@@ -182,65 +167,13 @@ class TaskCard extends StatelessWidget {
                     ),
                   ),
                 const SizedBox(height: 12),
-                if (todo.date.isNotEmpty)
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      if (todo.time.isNotEmpty)
-                        Row(
-                          children: [
-                            const Icon(Icons.access_time, size: 14, color: Colors.black),
-                            const SizedBox(width: 4),
-                            Text(todo.time, style: const TextStyle(fontSize: 12)),
-                          ],
-                        ),
-                      Text(todo.date, style: const TextStyle(fontSize: 12)),
-                    ],
-                  ),
+                if (todo.frequency?.isNotEmpty == true)
+                  _buildFrequencyDisplay(todo.frequency!),
               ],
             ),
           ),
         ],
       ),
     );
-  }
-
-  Color getPriorityColor(String priority) {
-    switch (priority) {
-      case 'High':
-        return const Color(0xFFEA4335);
-      case 'Medium':
-        return const Color(0xFFED9611);
-      case 'Low':
-        return const Color(0xFF24A19C);
-      default:
-        return Colors.grey.shade400;
-    }
-  }
-
-  String getPriorityLabel(String priority) {
-    switch (priority) {
-      case 'High':
-        return 'High Priority';
-      case 'Medium':
-        return 'Medium Priority';
-      case 'Low':
-        return 'Low Priority';
-      default:
-        return todo.type;
-    }
-  }
-
-  Color getStatusColor(String status) {
-    switch (status) {
-      case 'To-Do':
-        return const Color(0xFF218EFD);
-      case 'Completed':
-        return const Color(0xFF23A26D);
-      case 'In Progress':
-        return const Color(0xFFF6A221);
-      default:
-        return Colors.grey;
-    }
   }
 }

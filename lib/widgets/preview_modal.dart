@@ -10,7 +10,8 @@ typedef GetPriorityColor = Color Function(String priority);
 typedef GetPriorityLabel = String Function(String priority);
 typedef GetStatusColor = Color Function(String status);
 
-typedef OnUpdateAndSave = Future<void> Function(Todo updatedTodo);
+// Updated typedef to include the original todo's key
+typedef OnUpdateAndSave = Future<void> Function(Todo updatedTodo, dynamic todoKey);
 
 class PreviewModal extends StatefulWidget {
   final Todo todo;
@@ -370,15 +371,24 @@ class _PreviewModalState extends State<PreviewModal> {
                           title: widget.todo.title,
                           description: widget.todo.description,
                           emoji: widget.todo.emoji,
-                          date: _currentDate,
-                          time: _currentTime,
-                          priority: _currentPriority,
                           isCompleted: widget.todo.isCompleted,
                           status: widget.todo.status,
                           firebaseId: widget.todo.firebaseId,
+                          isDeleted: widget.todo.isDeleted,
+                          needsUpdate: widget.todo.needsUpdate,
+                          type: widget.todo.type,
+                          content: widget.todo.content,
+                          frequency: widget.todo.frequency,
+                          streak: widget.todo.streak,
+                          lastCompletedDate: widget.todo.lastCompletedDate,
+                          mood: widget.todo.mood,
+                          date: _currentDate,
+                          time: _currentTime,
+                          priority: _currentPriority,
                         );
                         Navigator.pop(context);
-                        widget.onUpdateAndSave(updatedTodo);
+                        // Pass the original todo's key along with the updated todo
+                        widget.onUpdateAndSave(updatedTodo, widget.todo.key);
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFEB5E00),
